@@ -1,3 +1,4 @@
+#This is a test change for auto-PR approval.
 terraform {
   required_providers {
     aws = {
