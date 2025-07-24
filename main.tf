@@ -19,7 +19,7 @@ data "aws_region" "current" {}
 
 # ─── Existing EC2 Instance ─────────────────────────────────────────────
 data "aws_instance" "existing_ec2" {
-  instance_id = "i-09d300c017411c249"
+  instance_id = "i-09d300c01c249"
 }
 
 # ─── Reuse existing IAM Role ───────────────────────────────────────────
