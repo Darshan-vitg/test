@@ -1,78 +1,174 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.0"
-    }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.0"
-    }
+provider "aws" {
+  region = "us-east-1" # Change as needed
+}
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  tags = {
+    Name = "main-vpc"
+  }
+}
+
+resource "aws_subnet" "subnet_a" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "us-east-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-a"
+  }
+}
+
+resource "aws_subnet" "subnet_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-b"
+  }
+}
+
+resource "aws_subnet" "subnet_c" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  availability_zone       = "us-east-1c"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-c"
+  }
+}
+
+resource "aws_subnet" "subnet_d" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.4.0/24"
+  availability_zone       = "us-east-1d"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-d"
+  }
+}
+
+resource "aws_subnet" "subnet_e" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.5.0/24"
+  availability_zone       = "us-east-1e"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-e"
+  }
+}
+
+resource "aws_subnet" "subnet_f" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.6.0/24"
+  availability_zone       = "us-east-1f"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "subnet-f"
+  }
+}
+
+resource "aws_security_group" "main_sg" {
+  name        = "main-sg"
+  description = "Allow all inbound traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  required_version = ">= 1.1.0"
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "main-sg"
+  }
 }
 
-provider "aws" {
-  region = "us-east-1"
+resource "aws_route_table" "main_rt" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "main-rt"
+  }
 }
 
-# Archive the Lambda code
-data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_file = "${path.module}/lambda_function.py"
-  output_path = "${path.module}/lambda_function_payload.zip"
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.subnet_a.id
+  route_table_id = aws_route_table.main_rt.id
 }
 
-# IAM Role for Lambda Execution
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
+# Add similar route table associations for all other subnets...
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "main-igw"
+  }
+}
+
+resource "aws_instance" "main_instance" {
+  ami                    = "ami-0c02fb55956c7d316" # Change based on region
+  instance_type          = "t2.micro"
+  subnet_id              = aws_subnet.subnet_a.id
+  vpc_security_group_ids = [aws_security_group.main_sg.id]
+  key_name               = "flask-key"
+
+  tags = {
+    Name = "main-instance"
+  }
+}
+
+resource "aws_iam_user" "dv_user" {
+  name = "DV"
+}
+
+resource "aws_iam_role" "support_role" {
+  name = "AWSServiceRoleForSupport"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Action = "sts:AssumeRole",
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      },
       Effect = "Allow",
-      Sid    = ""
+      Principal = {
+        Service = "support.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
     }]
   })
 }
 
-# Attach Basic Execution Policy
-resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
-  role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
+resource "aws_iam_role" "trusted_advisor_role" {
+  name = "AWSServiceRoleForTrustedAdvisor"
 
-# Create Lambda Function
-resource "aws_lambda_function" "example" {
-  function_name = "my_test_lambda"
-  filename      = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  handler       = "lambda_function.lambda_handler"
-  runtime       = "python3.11"
-  role          = aws_iam_role.lambda_exec_role.arn
-  timeout       = 10
-
-  vpc_config {
-    subnet_ids         = [
-      "subnet-06b890f36c1d8aa84",
-      "subnet-0c512f1685f3cf34b"
-    ]
-    security_group_ids = ["sg-05e0b063a67841948"]
-  }
-
-  environment {
-    variables = {
-      LOG_LEVEL = "info"
-    }
-  }
-}
-
-# CloudWatch Log Group (Optional)
-resource "aws_cloudwatch_log_group" "lambda_log" {
-  name              = "/aws/lambda/my_test_lambda"
-  retention_in_days = 14
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "trustedadvisor.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
 }
