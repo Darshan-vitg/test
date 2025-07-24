@@ -9,66 +9,70 @@ terraform {
       version = "~> 2.0"
     }
   }
+
+  required_version = ">= 1.1.0"
 }
 
 provider "aws" {
   region = "us-east-1"
 }
 
-data "aws_region" "current" {}
-
-# ─── Reuse existing IAM Role ───────────────────────────────────────────
-data "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
-}
-
-# ─── Archive Lambda Function ───────────────────────────────────────────
+# Archive the Lambda code
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/slack-daily-samgov-lambda"
-  output_path = "${path.module}/slack-daily-samgov-lambda.zip"
+  source_file = "${path.module}/lambda_function.py"
+  output_path = "${path.module}/lambda_function_payload.zip"
 }
 
-# ─── Archive Lambda Layer (requests) ───────────────────────────────────
-resource "aws_lambda_layer_version" "requests_layer" {
-  filename          = "${path.module}/requests-layer.zip"
-  layer_name        = "requests-lib"
-  compatible_runtimes = ["python3.9"]
-  source_code_hash  = filebase64sha256("${path.module}/requests-layer.zip")
+# IAM Role for Lambda Execution
+resource "aws_iam_role" "lambda_exec_role" {
+  name = "lambda_exec_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Action = "sts:AssumeRole",
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      },
+      Effect = "Allow",
+      Sid    = ""
+    }]
+  })
 }
 
-# ─── Lambda Function ───────────────────────────────────────────────────
-resource "aws_lambda_function" "slack_daily_samgov_lambda" {
-  function_name    = "slack-daily-samgov-lambda"
-  handler          = "slack-daily-samgov-lambda.lambda_handler"
-  runtime          = "python3.9"
-  role             = data.aws_iam_role.lambda_exec_role.arn
-  filename         = data.archive_file.lambda_zip.output_path
+# Attach Basic Execution Policy
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Create Lambda Function
+resource "aws_lambda_function" "example" {
+  function_name = "my_test_lambda"
+  filename      = data.archive_file.lambda_zip.output_path
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  layers           = [aws_lambda_layer_version.requests_layer.arn]
-  timeout          = 50
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.11"
+  role          = aws_iam_role.lambda_exec_role.arn
+  timeout       = 10
+
+  vpc_config {
+    subnet_ids         = [
+      "subnet-06b890f36c1d8aa84",
+      "subnet-0c512f1685f3cf34b"
+    ]
+    security_group_ids = ["sg-05e0b063a67841948"]
+  }
+
+  environment {
+    variables = {
+      LOG_LEVEL = "info"
+    }
+  }
 }
 
-# ─── CloudWatch Event Rule (Every 5 Minutes) ───────────────────────────
-resource "aws_cloudwatch_event_rule" "daily_8Am_EST" {
-  name                = "samgov-lambda-scheduler"
-  schedule_expression = "cron(0 13 * * ? *)"
-  is_enabled          = true
-  #to check
-  #schedule_expression = "rate(2 minutes)"
-}
-
-resource "aws_cloudwatch_event_target" "trigger_lambda" {
-  rule      = aws_cloudwatch_event_rule.daily_8Am_EST.name
-  target_id = "samgov-scheduled-run"
-  arn       = aws_lambda_function.slack_daily_samgov_lambda.arn
-}
-
-# ─── Permissions to Allow EventBridge to Trigger Lambda ────────────────
-resource "aws_lambda_permission" "allow_eventbridge_to_invoke" {
-  statement_id  = "AllowEventBridgeInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.slack_daily_samgov_lambda.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily_8Am_EST.arn
+# CloudWatch Log Group (Optional)
+resource "aws_cloudwatch_log_group" "lambda_log" {
+  name              = "/aws/lambda/my_test_lambda"
+  retention_in_days = 14
 }
