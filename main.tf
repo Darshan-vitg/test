@@ -1,4 +1,3 @@
-#This is a test change for auto-PR approval.
 terraform {
   required_providers {
     aws = {
@@ -18,6 +17,11 @@ provider "aws" {
 
 data "aws_region" "current" {}
 
+# ─── Existing EC2 Instance ─────────────────────────────────────────────
+data "aws_instance" "existing_ec2" {
+  instance_id = "i-09d300c017411c249"
+}
+
 # ─── Reuse existing IAM Role ───────────────────────────────────────────
 data "aws_iam_role" "lambda_exec_role" {
   name = "lambda_exec_role"
@@ -32,10 +36,10 @@ data "archive_file" "lambda_zip" {
 
 # ─── Archive Lambda Layer (requests) ───────────────────────────────────
 resource "aws_lambda_layer_version" "requests_layer" {
-  filename          = "${path.module}/requests-layer.zip"
-  layer_name        = "requests-lib"
+  filename           = "${path.module}/requests-layer.zip"
+  layer_name         = "requests-lib"
   compatible_runtimes = ["python3.9"]
-  source_code_hash  = filebase64sha256("${path.module}/requests-layer.zip")
+  source_code_hash   = filebase64sha256("${path.module}/requests-layer.zip")
 }
 
 # ─── Lambda Function ───────────────────────────────────────────────────
@@ -50,13 +54,11 @@ resource "aws_lambda_function" "slack_daily_samgov_lambda" {
   timeout          = 50
 }
 
-# ─── CloudWatch Event Rule (Every 5 Minutes) ───────────────────────────
+# ─── CloudWatch Event Rule (Every Day 8AM EST) ─────────────────────────
 resource "aws_cloudwatch_event_rule" "daily_8Am_EST" {
   name                = "samgov-lambda-scheduler"
-  schedule_expression = "cron(0 13 * * ? *)"
+  schedule_expression = "cron(0 13 * * ? *)" # 8AM EST
   is_enabled          = true
-  #to check
-  #schedule_expression = "rate(2 minutes)"
 }
 
 resource "aws_cloudwatch_event_target" "trigger_lambda" {
