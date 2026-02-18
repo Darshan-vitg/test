@@ -1,74 +1,61 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.0"
-    }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.0"
-    }
-  }
-}
-
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
-data "aws_region" "current" {}
-
-# ─── Reuse existing IAM Role ───────────────────────────────────────────
-data "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
+# Use existing VPC
+data "aws_vpc" "existing" {
+  id = "vpc-0b75b0de8410ced50"
 }
 
-# ─── Archive Lambda Function ───────────────────────────────────────────
-data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/slack-daily-samgov-lambda"
-  output_path = "${path.module}/slack-daily-samgov-lambda.zip"
+# Use existing subnets
+data "aws_subnet" "subnet_1" {
+  id = "subnet-06b890f36c1d8aa84"
+}
+data "aws_subnet" "subnet_2" {
+  id = "subnet-0c512f1685f3cf34b"
+}
+data "aws_subnet" "subnet_3" {
+  id = "subnet-058ff11acd1ee121d"
+}
+data "aws_subnet" "subnet_4" {
+  id = "subnet-02f1c80839068cabe"
+}
+data "aws_subnet" "subnet_5" {
+  id = "subnet-0c6014d16d826cc10"
+}
+data "aws_subnet" "subnet_6" {
+  id = "subnet-0bb037e2c138aff42"
 }
 
-# ─── Archive Lambda Layer (requests) ───────────────────────────────────
-resource "aws_lambda_layer_version" "requests_layer" {
-  filename          = "${path.module}/requests-layer.zip"
-  layer_name        = "requests-lib"
-  compatible_runtimes = ["python3.9"]
-  source_code_hash  = filebase64sha256("${path.module}/requests-layer.zip")
+# Use existing security group
+data "aws_security_group" "existing" {
+  id = "sg-05e0b063a67841948"
 }
 
-# ─── Lambda Function ───────────────────────────────────────────────────
-resource "aws_lambda_function" "slack_daily_samgov_lambda" {
-  function_name    = "slack-daily-samgov-lambda"
-  handler          = "slack-daily-samgov-lambda.lambda_handler"
-  runtime          = "python3.9"
-  role             = data.aws_iam_role.lambda_exec_role.arn
-  filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  layers           = [aws_lambda_layer_version.requests_layer.arn]
-  timeout          = 50
+# Use existing route table
+data "aws_route_table" "existing" {
+  id = "rtb-0d75255b2973bdd63"
 }
 
-# ─── CloudWatch Event Rule (Every 5 Minutes) ───────────────────────────
-resource "aws_cloudwatch_event_rule" "daily_8Am_EST" {
-  name                = "samgov-lambda-scheduler"
-  schedule_expression = "cron(0 13 * * ? *)"
-  is_enabled          = true
-  #to check
-  #schedule_expression = "rate(2 minutes)"
+# Use existing EC2 instance
+data "aws_instance" "existing" {
+  instance_id = "i-09d300c017411c249"
 }
 
-resource "aws_cloudwatch_event_target" "trigger_lambda" {
-  rule      = aws_cloudwatch_event_rule.daily_8Am_EST.name
-  target_id = "samgov-scheduled-run"
-  arn       = aws_lambda_function.slack_daily_samgov_lambda.arn
+# IAM roles and user
+data "aws_iam_role" "support" {
+  name = "AWSServiceRoleForSupport"
 }
 
-# ─── Permissions to Allow EventBridge to Trigger Lambda ────────────────
-resource "aws_lambda_permission" "allow_eventbridge_to_invoke" {
-  statement_id  = "AllowEventBridgeInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.slack_daily_samgov_lambda.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily_8Am_EST.arn
+data "aws_iam_role" "trusted_advisor" {
+  name = "AWSServiceRoleForTrustedAdvisor"
+}
+
+data "aws_iam_user" "dv" {
+  user_name = "DV"
+}
+
+# Output sample
+output "ec2_instance_public_ip" {
+  value = data.aws_instance.existing.public_ip
 }
